@@ -148,32 +148,65 @@ export default function InvoiceForge() {
     setActiveTab('editor')
   }
 
-  const loadScript = (src: string): Promise<void> => {
+  const loadScript = (src: string, globalVar: string): Promise<void> => {
     return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) {
+      // Check if already loaded
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((window as any)[globalVar]) {
         resolve()
         return
       }
+      
+      // Check if script tag exists but hasn't loaded yet
+      const existingScript = document.querySelector(`script[src="${src}"]`)
+      if (existingScript) {
+        // Wait for it to load
+        const checkLoaded = setInterval(() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if ((window as any)[globalVar]) {
+            clearInterval(checkLoaded)
+            resolve()
+          }
+        }, 50)
+        setTimeout(() => {
+          clearInterval(checkLoaded)
+          reject(new Error(`Timeout loading ${globalVar}`))
+        }, 10000)
+        return
+      }
+      
       const script = document.createElement('script')
       script.src = src
-      script.onload = () => resolve()
-      script.onerror = reject
+      script.onload = () => {
+        // Give it a moment to initialize
+        setTimeout(resolve, 100)
+      }
+      script.onerror = () => reject(new Error(`Failed to load ${src}`))
       document.head.appendChild(script)
     })
   }
 
   const handleDownload = async (format: 'pdf' | 'jpeg' = 'pdf') => {
     const previewEl = document.getElementById('invoice-preview-content')
-    if (!previewEl) return
+    if (!previewEl) {
+      showToast('Invoice preview not found. Please try again.')
+      return
+    }
 
     const invNum = (invNumber || 'invoice').replace(/[^a-zA-Z0-9\-_]/g, '-')
 
     try {
       // Load html2canvas from CDN
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
+      await loadScript(
+        'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+        'html2canvas'
+      )
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const html2canvas = (window as any).html2canvas
+      if (!html2canvas) {
+        throw new Error('html2canvas not loaded')
+      }
 
       // Create canvas from the invoice element
       const canvas = await html2canvas(previewEl, {
@@ -181,6 +214,7 @@ export default function InvoiceForge() {
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
+        logging: false,
       })
 
       if (format === 'jpeg') {
@@ -195,10 +229,17 @@ export default function InvoiceForge() {
         showToast(`Downloaded ${invNum}.jpg`)
       } else {
         // Load jsPDF from CDN
-        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+        await loadScript(
+          'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+          'jspdf'
+        )
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { jsPDF } = (window as any).jspdf
+        const jspdfLib = (window as any).jspdf
+        if (!jspdfLib || !jspdfLib.jsPDF) {
+          throw new Error('jsPDF not loaded')
+        }
+        const { jsPDF } = jspdfLib
 
         const imgData = canvas.toDataURL('image/png')
         const imgWidth = canvas.width
@@ -219,6 +260,7 @@ export default function InvoiceForge() {
         showToast(`Downloaded ${invNum}.pdf`)
       }
     } catch (error) {
+      console.error('[v0] Download error:', error)
       showToast('Error generating download. Please try again.')
     }
   }
