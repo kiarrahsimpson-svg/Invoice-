@@ -148,106 +148,106 @@ export default function InvoiceForge() {
     setActiveTab('editor')
   }
 
+  const [isDownloading, setIsDownloading] = useState(false)
+
   const loadScript = (src: string, globalVar: string): Promise<void> => {
     return new Promise((resolve, reject) => {
-      // Check if already loaded
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((window as any)[globalVar]) {
         resolve()
         return
       }
       
-      // Check if script tag exists but hasn't loaded yet
-      const existingScript = document.querySelector(`script[src="${src}"]`)
+      const existingScript = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null
       if (existingScript) {
-        // Wait for it to load
-        const checkLoaded = setInterval(() => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if ((window as any)[globalVar]) {
-            clearInterval(checkLoaded)
-            resolve()
-          }
-        }, 50)
-        setTimeout(() => {
-          clearInterval(checkLoaded)
-          reject(new Error(`Timeout loading ${globalVar}`))
-        }, 10000)
+        existingScript.addEventListener('load', () => resolve())
+        existingScript.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((window as any)[globalVar]) {
+          resolve()
+        }
         return
       }
       
       const script = document.createElement('script')
       script.src = src
-      script.onload = () => {
-        // Give it a moment to initialize
-        setTimeout(resolve, 100)
-      }
+      script.crossOrigin = 'anonymous'
+      script.onload = () => setTimeout(resolve, 50)
       script.onerror = () => reject(new Error(`Failed to load ${src}`))
       document.head.appendChild(script)
     })
   }
 
   const handleDownload = async (format: 'pdf' | 'jpeg' = 'pdf') => {
+    if (isDownloading) return
+    
     const previewEl = document.getElementById('invoice-preview-content')
     if (!previewEl) {
-      showToast('Invoice preview not found. Please try again.')
+      showToast('Invoice preview not found.')
       return
     }
 
+    setIsDownloading(true)
     const invNum = (invNumber || 'invoice').replace(/[^a-zA-Z0-9\-_]/g, '-')
 
     try {
-      // Load html2canvas from CDN
+      // Load html2canvas from jsdelivr CDN
       await loadScript(
-        'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+        'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
         'html2canvas'
       )
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const html2canvas = (window as any).html2canvas
       if (!html2canvas) {
-        throw new Error('html2canvas not loaded')
+        throw new Error('html2canvas failed to initialize')
       }
 
-      // Create canvas from the invoice element
-      const canvas = await html2canvas(previewEl, {
+      // Clone the element to avoid modifying the original
+      const clone = previewEl.cloneNode(true) as HTMLElement
+      clone.style.position = 'absolute'
+      clone.style.left = '-9999px'
+      clone.style.top = '0'
+      clone.style.width = previewEl.offsetWidth + 'px'
+      document.body.appendChild(clone)
+
+      // Create canvas from the cloned element
+      const canvas = await html2canvas(clone, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
         logging: false,
+        width: previewEl.offsetWidth,
+        height: previewEl.offsetHeight,
       })
 
+      document.body.removeChild(clone)
+
       if (format === 'jpeg') {
-        // Download as JPEG
         const imgData = canvas.toDataURL('image/jpeg', 0.95)
         const link = document.createElement('a')
         link.href = imgData
         link.download = `${invNum}.jpg`
-        document.body.appendChild(link)
         link.click()
-        document.body.removeChild(link)
         showToast(`Downloaded ${invNum}.jpg`)
       } else {
-        // Load jsPDF from CDN
+        // Load jsPDF from jsdelivr CDN
         await loadScript(
-          'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+          'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
           'jspdf'
         )
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const jspdfLib = (window as any).jspdf
-        if (!jspdfLib || !jspdfLib.jsPDF) {
-          throw new Error('jsPDF not loaded')
+        if (!jspdfLib?.jsPDF) {
+          throw new Error('jsPDF failed to initialize')
         }
         const { jsPDF } = jspdfLib
 
         const imgData = canvas.toDataURL('image/png')
-        const imgWidth = canvas.width
-        const imgHeight = canvas.height
-        
-        // Calculate PDF dimensions (A4 ratio)
-        const pdfWidth = 210 // A4 width in mm
-        const pdfHeight = (imgHeight * pdfWidth) / imgWidth
+        const pdfWidth = 210
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width
         
         const pdf = new jsPDF({
           orientation: pdfHeight > pdfWidth ? 'portrait' : 'landscape',
@@ -261,7 +261,9 @@ export default function InvoiceForge() {
       }
     } catch (error) {
       console.error('[v0] Download error:', error)
-      showToast('Error generating download. Please try again.')
+      showToast(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsDownloading(false)
     }
   }
 
@@ -435,17 +437,19 @@ export default function InvoiceForge() {
               <Button
                 onClick={() => handleDownload('pdf')}
                 className="bg-pro hover:bg-pro-dk text-white"
+                disabled={isDownloading}
               >
                 <Download className="w-4 h-4 mr-1.5" />
-                PDF
+                {isDownloading ? 'Loading...' : 'PDF'}
               </Button>
               <Button
                 onClick={() => handleDownload('jpeg')}
                 variant="outline"
                 className="border-border hover:border-gold hover:text-gold"
+                disabled={isDownloading}
               >
                 <Download className="w-4 h-4 mr-1.5" />
-                JPEG
+                {isDownloading ? 'Loading...' : 'JPEG'}
               </Button>
               <Button
                 variant="outline"
