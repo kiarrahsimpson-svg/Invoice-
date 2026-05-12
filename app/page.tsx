@@ -211,6 +211,24 @@ export default function InvoiceForge() {
       clone.style.width = previewEl.offsetWidth + 'px'
       document.body.appendChild(clone)
 
+      // Resolve CSS custom properties to actual color values for html2canvas
+      const resolveComputedStyles = (element: HTMLElement) => {
+        const computed = window.getComputedStyle(element)
+        const props = ['color', 'backgroundColor', 'borderColor', 'borderTopColor', 'borderBottomColor', 'borderLeftColor', 'borderRightColor']
+        props.forEach(prop => {
+          const value = computed.getPropertyValue(prop)
+          if (value && value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
+            element.style.setProperty(prop.replace(/([A-Z])/g, '-$1').toLowerCase(), value)
+          }
+        })
+        Array.from(element.children).forEach(child => {
+          if (child instanceof HTMLElement) {
+            resolveComputedStyles(child)
+          }
+        })
+      }
+      resolveComputedStyles(clone)
+
       // Create canvas from the cloned element
       const canvas = await html2canvas(clone, {
         scale: 2,
@@ -220,6 +238,25 @@ export default function InvoiceForge() {
         logging: false,
         width: previewEl.offsetWidth,
         height: previewEl.offsetHeight,
+        onclone: (clonedDoc) => {
+          // Additional cleanup for any remaining CSS variables
+          const style = clonedDoc.createElement('style')
+          style.textContent = `
+            * { 
+              --ink: #0f0e0d !important;
+              --paper: #faf8f4 !important;
+              --cream: #f2ede3 !important;
+              --gold: #c8973a !important;
+              --muted: #7a7268 !important;
+              --border: #ddd8cc !important;
+              --success: #2d7d4f !important;
+              --foreground: #0f0e0d !important;
+              --background: #faf8f4 !important;
+              --muted-foreground: #7a7268 !important;
+            }
+          `
+          clonedDoc.head.appendChild(style)
+        }
       })
 
       document.body.removeChild(clone)
