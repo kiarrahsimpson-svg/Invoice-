@@ -1,0 +1,106 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* InvoiceForge Color Palette */
+  --ink: #0f0e0d;
+  --paper: #faf8f4;
+  --cream: #f2ede3;
+  --gold: #c8973a;
+  --gold-dk: #b5852e;
+  --red: #c0392b;
+  --muted: #7a7268;
+  --border-color: #ddd8cc;
+  --success: #2d7d4f;
+  --pro: #6c3fc5;
+  --pro-dk: #5a32a8;
+  --pro-lt: #f0ebff;
+
+  /* Design Tokens */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: #ffffff;
+  --card-foreground: var(--ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--ink);
+  --primary: var(--gold);
+  --primary-foreground: #ffffff;
+  --secondary: var(--cream);
+  --secondary-foreground: var(--ink);
+  --muted-bg: var(--cream);
+  --muted-foreground: var(--muted);
+  --accent: var(--cream);
+  --accent-foreground: var(--ink);
+  --destructive: var(--red);
+  --destructive-foreground: #ffffff;
+  --border: var(--border-color);
+  --input: var(--border-color);
+  --ring: var(--gold);
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --font-sans: 'DM Sans', 'DM Sans Fallback', sans-serif;
+  --font-serif: 'DM Serif Display', 'DM Serif Display Fallback', serif;
+  --font-mono: 'DM Mono', 'DM Mono Fallback', monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted-bg);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Custom colors */
+  --color-ink: var(--ink);
+  --color-paper: var(--paper);
+  --color-cream: var(--cream);
+  --color-gold: var(--gold);
+  --color-gold-dk: var(--gold-dk);
+  --color-red: var(--red);
+  --color-success: var(--success);
+  --color-pro: var(--pro);
+  --color-pro-dk: var(--pro-dk);
+  --color-pro-lt: var(--pro-lt);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+  }
+  .invoice-paper {
+    box-shadow: none !important;
+    max-width: 100% !important;
+  }
+}
