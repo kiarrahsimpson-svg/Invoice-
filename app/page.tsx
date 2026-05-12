@@ -1,9 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useStore, type Invoice, type LineItem, getTodayISO, getDueDateISO, generateInvoiceNumber, currencySymbols } from '@/lib/store'
-import html2canvas from 'html2canvas-pro'
-import { jsPDF } from 'jspdf'
 import { AuthGate, AuthModal } from '@/components/auth-gate'
 import { Header } from '@/components/header'
 import { NavTabs } from '@/components/nav-tabs'
@@ -150,40 +148,232 @@ export default function InvoiceForge() {
     setActiveTab('editor')
   }
 
-  const handleDownload = async (format: 'pdf' | 'jpeg' = 'pdf') => {
-    const previewEl = document.getElementById('invoice-preview-content')
-    if (!previewEl) return
+  const [isDownloading, setIsDownloading] = useState(false)
 
+  const loadScript = (src: string, globalVar: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((window as any)[globalVar]) {
+        resolve()
+        return
+      }
+      
+      const existingScript = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null
+      if (existingScript) {
+        existingScript.addEventListener('load', () => resolve())
+        existingScript.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((window as any)[globalVar]) {
+          resolve()
+        }
+        return
+      }
+      
+      const script = document.createElement('script')
+      script.src = src
+      script.crossOrigin = 'anonymous'
+      script.onload = () => setTimeout(resolve, 50)
+      script.onerror = () => reject(new Error(`Failed to load ${src}`))
+      document.head.appendChild(script)
+    })
+  }
+
+  const generateInvoiceHTML = () => {
+    const symbol = currencySymbols[currentInvoice.currency] || '$'
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: 'Helvetica Neue', Arial, sans-serif; 
+              background: #ffffff; 
+              color: #0f0e0d;
+              padding: 40px;
+              line-height: 1.5;
+            }
+            .invoice { max-width: 700px; margin: 0 auto; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 2px solid #f2ede3; }
+            .company h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; color: #0f0e0d; }
+            .company p { font-size: 13px; color: #7a7268; margin-bottom: 2px; }
+            .badge { background: linear-gradient(135deg, #c8973a, #daa520); color: white; padding: 6px 16px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 1px; }
+            .details { display: flex; justify-content: space-between; margin-bottom: 40px; }
+            .detail-block { flex: 1; }
+            .detail-block h3 { font-size: 10px; color: #7a7268; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
+            .detail-block p { font-size: 13px; color: #0f0e0d; margin-bottom: 2px; }
+            .detail-block strong { font-weight: 600; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+            th { text-align: left; padding: 12px 8px; background: #f2ede3; font-size: 10px; color: #7a7268; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+            th:last-child { text-align: right; }
+            td { padding: 14px 8px; border-bottom: 1px solid #f2ede3; font-size: 13px; color: #0f0e0d; }
+            td:last-child { text-align: right; font-weight: 500; }
+            .totals { margin-left: auto; width: 220px; }
+            .total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; color: #7a7268; }
+            .total-row span:last-child { color: #0f0e0d; font-weight: 500; }
+            .total-final { border-top: 2px solid #0f0e0d; margin-top: 8px; padding-top: 12px; }
+            .total-final span { font-size: 16px; font-weight: 700; color: #0f0e0d; }
+            .notes { margin-top: 40px; padding-top: 20px; border-top: 1px solid #f2ede3; }
+            .notes h3 { font-size: 10px; color: #7a7268; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
+            .notes p { font-size: 13px; color: #7a7268; }
+          </style>
+        </head>
+        <body>
+          <div class="invoice">
+            <div class="header">
+              <div class="company">
+                <h1>${currentInvoice.businessName || 'Your Business'}</h1>
+                <p>${currentInvoice.businessEmail || ''}</p>
+                <p>${currentInvoice.businessAddress || ''}</p>
+              </div>
+              <div class="badge">INVOICE</div>
+            </div>
+            
+            <div class="details">
+              <div class="detail-block">
+                <h3>Bill To</h3>
+                <p><strong>${currentInvoice.clientName || 'Client Name'}</strong></p>
+                <p>${currentInvoice.clientEmail || ''}</p>
+                <p>${currentInvoice.clientAddress || ''}</p>
+              </div>
+              <div class="detail-block" style="text-align: right;">
+                <h3>Invoice Details</h3>
+                <p><strong>Invoice #:</strong> ${currentInvoice.invoiceNumber}</p>
+                <p><strong>Date:</strong> ${currentInvoice.invoiceDate}</p>
+                <p><strong>Due:</strong> ${currentInvoice.dueDate}</p>
+              </div>
+            </div>
+            
+            <table>
+              <thead>
+                <tr>
+                  <th>Description</th>
+                  <th>Qty</th>
+                  <th>Rate</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${currentInvoice.items.map(item => `
+                  <tr>
+                    <td>${item.description || 'Item'}</td>
+                    <td>${item.quantity}</td>
+                    <td>${symbol}${item.rate.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                    <td>${symbol}${(item.quantity * item.rate).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            
+            <div class="totals">
+              <div class="total-row">
+                <span>Subtotal</span>
+                <span>${symbol}${subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div class="total-row">
+                <span>Tax (${currentInvoice.taxRate}%)</span>
+                <span>${symbol}${tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div class="total-row total-final">
+                <span>Total</span>
+                <span>${symbol}${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+            
+            ${currentInvoice.notes ? `
+              <div class="notes">
+                <h3>Notes</h3>
+                <p>${currentInvoice.notes}</p>
+              </div>
+            ` : ''}
+          </div>
+        </body>
+      </html>
+    `
+  }
+
+  const handleDownload = async (format: 'pdf' | 'jpeg' = 'pdf') => {
+    if (isDownloading) return
+    setIsDownloading(true)
     const invNum = (invNumber || 'invoice').replace(/[^a-zA-Z0-9\-_]/g, '-')
 
     try {
-      // Create canvas from the invoice element
-      const canvas = await html2canvas(previewEl, {
+      // Load html2canvas from jsdelivr CDN
+      await loadScript(
+        'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
+        'html2canvas'
+      )
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const html2canvas = (window as any).html2canvas
+      if (!html2canvas) {
+        throw new Error('html2canvas failed to initialize')
+      }
+
+      // Create iframe with pure HTML/CSS invoice (no Tailwind, no CSS variables)
+      const iframe = document.createElement('iframe')
+      iframe.style.position = 'absolute'
+      iframe.style.left = '-9999px'
+      iframe.style.top = '0'
+      iframe.style.width = '800px'
+      iframe.style.height = '1200px'
+      iframe.style.border = 'none'
+      document.body.appendChild(iframe)
+
+      const invoiceHTML = generateInvoiceHTML()
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+      if (!iframeDoc) {
+        throw new Error('Could not access iframe document')
+      }
+      
+      iframeDoc.open()
+      iframeDoc.write(invoiceHTML)
+      iframeDoc.close()
+
+      // Wait for iframe to render
+      await new Promise(resolve => setTimeout(resolve, 300))
+
+      const invoiceEl = iframeDoc.querySelector('.invoice') as HTMLElement
+      if (!invoiceEl) {
+        throw new Error('Invoice element not found')
+      }
+
+      // Create canvas from the iframe content
+      const canvas = await html2canvas(invoiceEl, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
+        logging: false,
       })
 
+      document.body.removeChild(iframe)
+
       if (format === 'jpeg') {
-        // Download as JPEG
         const imgData = canvas.toDataURL('image/jpeg', 0.95)
         const link = document.createElement('a')
         link.href = imgData
         link.download = `${invNum}.jpg`
-        document.body.appendChild(link)
         link.click()
-        document.body.removeChild(link)
         showToast(`Downloaded ${invNum}.jpg`)
       } else {
-        // Download as PDF
-        const imgData = canvas.toDataURL('image/png')
-        const imgWidth = canvas.width
-        const imgHeight = canvas.height
+        // Load jsPDF from jsdelivr CDN
+        await loadScript(
+          'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
+          'jspdf'
+        )
         
-        // Calculate PDF dimensions (A4 ratio)
-        const pdfWidth = 210 // A4 width in mm
-        const pdfHeight = (imgHeight * pdfWidth) / imgWidth
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const jspdfLib = (window as any).jspdf
+        if (!jspdfLib?.jsPDF) {
+          throw new Error('jsPDF failed to initialize')
+        }
+        const { jsPDF } = jspdfLib
+
+        const imgData = canvas.toDataURL('image/png')
+        const pdfWidth = 210
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width
         
         const pdf = new jsPDF({
           orientation: pdfHeight > pdfWidth ? 'portrait' : 'landscape',
@@ -196,7 +386,9 @@ export default function InvoiceForge() {
         showToast(`Downloaded ${invNum}.pdf`)
       }
     } catch (error) {
-      showToast('Error generating download. Please try again.')
+      showToast(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsDownloading(false)
     }
   }
 
@@ -370,17 +562,19 @@ export default function InvoiceForge() {
               <Button
                 onClick={() => handleDownload('pdf')}
                 className="bg-pro hover:bg-pro-dk text-white"
+                disabled={isDownloading}
               >
                 <Download className="w-4 h-4 mr-1.5" />
-                PDF
+                {isDownloading ? 'Loading...' : 'PDF'}
               </Button>
               <Button
                 onClick={() => handleDownload('jpeg')}
                 variant="outline"
                 className="border-border hover:border-gold hover:text-gold"
+                disabled={isDownloading}
               >
                 <Download className="w-4 h-4 mr-1.5" />
-                JPEG
+                {isDownloading ? 'Loading...' : 'JPEG'}
               </Button>
               <Button
                 variant="outline"
