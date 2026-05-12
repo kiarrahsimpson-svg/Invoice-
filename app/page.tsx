@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useStore, type Invoice, type LineItem, getTodayISO, getDueDateISO, generateInvoiceNumber, currencySymbols } from '@/lib/store'
+import html2canvas from 'html2canvas-pro'
+import { jsPDF } from 'jspdf'
 import { AuthGate, AuthModal } from '@/components/auth-gate'
 import { Header } from '@/components/header'
 import { NavTabs } from '@/components/nav-tabs'
@@ -148,50 +150,126 @@ export default function InvoiceForge() {
     setActiveTab('editor')
   }
 
-  const handleDownload = () => {
+  const handleDownload = async (format: 'pdf' | 'jpeg' = 'pdf') => {
     const previewEl = document.getElementById('invoice-preview-content')
     if (!previewEl) return
 
-    const invHtml = previewEl.innerHTML
     const invNum = (invNumber || 'invoice').replace(/[^a-zA-Z0-9\-_]/g, '-')
-    const fonts = 'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap'
 
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Invoice ${invNumber || ''}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="${fonts}" rel="stylesheet" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    :root{--ink:#0f0e0d;--paper:#faf8f4;--cream:#f2ede3;--gold:#c8973a;--muted:#7a7268;--border:#ddd8cc;--success:#2d7d4f;}
-    body{background:#e8e4dc;padding:40px 20px;font-family:"DM Sans",sans-serif;}
-    .invoice-paper{background:white;max-width:720px;margin:0 auto;padding:56px 60px;position:relative;box-shadow:0 8px 40px rgba(0,0,0,0.15);}
-    @media print{body{background:white;padding:0;}.invoice-paper{box-shadow:none;max-width:100%;}}
-  </style>
-</head>
-<body>
-  <div class="invoice-paper">
-    ${invHtml}
-  </div>
-</body>
-</html>`
+    try {
+      // Create canvas from the invoice element
+      const canvas = await html2canvas(previewEl, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+      })
 
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${invNum}.html`
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => {
-      URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    }, 1000)
-    showToast(`Downloaded ${invNum}.html`)
+      if (format === 'jpeg') {
+        // Download as JPEG
+        const imgData = canvas.toDataURL('image/jpeg', 0.95)
+        const link = document.createElement('a')
+        link.href = imgData
+        link.download = `${invNum}.jpg`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        showToast(`Downloaded ${invNum}.jpg`)
+      } else {
+        // Download as PDF
+        const imgData = canvas.toDataURL('image/png')
+        const imgWidth = canvas.width
+        const imgHeight = canvas.height
+        
+        // Calculate PDF dimensions (A4 ratio)
+        const pdfWidth = 210 // A4 width in mm
+        const pdfHeight = (imgHeight * pdfWidth) / imgWidth
+        
+        const pdf = new jsPDF({
+          orientation: pdfHeight > pdfWidth ? 'portrait' : 'landscape',
+          unit: 'mm',
+          format: [pdfWidth, pdfHeight],
+        })
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
+        pdf.save(`${invNum}.pdf`)
+        showToast(`Downloaded ${invNum}.pdf`)
+      }
+    } catch (error) {
+      showToast('Error generating download. Please try again.')
+    }
+  }
+
+  const handlePrint = () => {
+    const previewEl = document.getElementById('invoice-preview-content')
+    if (!previewEl) return
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600')
+    if (!printWindow) {
+      showToast('Please allow popups to print the invoice.')
+      return
+    }
+
+    const invHtml = previewEl.innerHTML
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Invoice ${invNumber || ''}</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+          <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+          <script src="https://cdn.tailwindcss.com"><\/script>
+          <style>
+            :root {
+              --ink: #0f0e0d;
+              --paper: #faf8f4;
+              --cream: #f2ede3;
+              --gold: #c8973a;
+              --muted: #7a7268;
+              --border: #ddd8cc;
+              --success: #2d7d4f;
+            }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: "DM Sans", system-ui, sans-serif; 
+              background: white;
+              padding: 0;
+            }
+            .invoice-container {
+              max-width: 720px;
+              margin: 0 auto;
+              padding: 40px;
+              background: white;
+            }
+            @media print {
+              body { 
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .invoice-container {
+                padding: 20px;
+                max-width: 100%;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="invoice-container">
+            ${invHtml}
+          </div>
+          <script>
+            // Wait for fonts and styles to load
+            setTimeout(function() {
+              window.print();
+              window.onafterprint = function() { window.close(); };
+            }, 500);
+          <\/script>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
   }
 
   // Wait for hydration
@@ -290,19 +368,27 @@ export default function InvoiceForge() {
                 New
               </Button>
               <Button
-                onClick={handleDownload}
+                onClick={() => handleDownload('pdf')}
                 className="bg-pro hover:bg-pro-dk text-white"
               >
                 <Download className="w-4 h-4 mr-1.5" />
-                Download
+                PDF
+              </Button>
+              <Button
+                onClick={() => handleDownload('jpeg')}
+                variant="outline"
+                className="border-border hover:border-gold hover:text-gold"
+              >
+                <Download className="w-4 h-4 mr-1.5" />
+                JPEG
               </Button>
               <Button
                 variant="outline"
-                onClick={() => window.print()}
+                onClick={handlePrint}
                 className="border-border hover:border-gold hover:text-gold"
               >
                 <Printer className="w-4 h-4 mr-1.5" />
-                Print / PDF
+                Print
               </Button>
             </div>
 
