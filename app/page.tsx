@@ -1,9 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useStore, type Invoice, type LineItem, getTodayISO, getDueDateISO, generateInvoiceNumber, currencySymbols } from '@/lib/store'
-import html2canvas from 'html2canvas-pro'
-import { jsPDF } from 'jspdf'
 import { AuthGate, AuthModal } from '@/components/auth-gate'
 import { Header } from '@/components/header'
 import { NavTabs } from '@/components/nav-tabs'
@@ -150,6 +148,20 @@ export default function InvoiceForge() {
     setActiveTab('editor')
   }
 
+  const loadScript = (src: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) {
+        resolve()
+        return
+      }
+      const script = document.createElement('script')
+      script.src = src
+      script.onload = () => resolve()
+      script.onerror = reject
+      document.head.appendChild(script)
+    })
+  }
+
   const handleDownload = async (format: 'pdf' | 'jpeg' = 'pdf') => {
     const previewEl = document.getElementById('invoice-preview-content')
     if (!previewEl) return
@@ -157,6 +169,12 @@ export default function InvoiceForge() {
     const invNum = (invNumber || 'invoice').replace(/[^a-zA-Z0-9\-_]/g, '-')
 
     try {
+      // Load html2canvas from CDN
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const html2canvas = (window as any).html2canvas
+
       // Create canvas from the invoice element
       const canvas = await html2canvas(previewEl, {
         scale: 2,
@@ -176,7 +194,12 @@ export default function InvoiceForge() {
         document.body.removeChild(link)
         showToast(`Downloaded ${invNum}.jpg`)
       } else {
-        // Download as PDF
+        // Load jsPDF from CDN
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { jsPDF } = (window as any).jspdf
+
         const imgData = canvas.toDataURL('image/png')
         const imgWidth = canvas.width
         const imgHeight = canvas.height
